@@ -115,7 +115,7 @@ public class SendThread implements Runnable {
 	            }
             	
             	context.setMe(me);
-                System.out.print("\r==== send ====\n" + p.toString() + "\n==== send ====\n> ");
+                //System.out.print("\r==== send ====\n" + p.toString() + "\n==== send ====\n> ");
 	            
 	            byte[] payload = p.toString().getBytes(StandardCharsets.UTF_8);
 

@@ -11,7 +11,7 @@ public class RecvThread implements Runnable {
 
     public void parseReceiveData(String recvData) throws Exception {
         // 여기부터 3EPROTO 패킷 처리를 개시합니다.
-        System.out.print("\n==== recv ====\n" + recvData + "\n==== recv ====\n> ");
+        //System.out.print("\n==== recv ====\n" + recvData + "\n==== recv ====\n> ");
         Protocol p = Protocol.strToPro(recvData);
 		Protocol rp = new Protocol();
 		User me = context.getMe();
@@ -55,7 +55,7 @@ public class RecvThread implements Runnable {
         			rp.headerMap.put("From", me.myName);
         			rp.headerMap.put("To", me.yourName);
         		}
-                System.out.print("\n==== send ====\n" + rp.toString() + "\n==== send ====\n> ");
+                //System.out.print("\n==== send ====\n" + rp.toString() + "\n==== send ====\n> ");
     			
     			sockOut.write(rp.toString().getBytes());
     			sockOut.flush();
@@ -75,7 +75,7 @@ public class RecvThread implements Runnable {
         			rp.bodyArray.add(RSA.encrypt(me.mySecretKey, me.yourPublickey));
         			rp.bodyArray.add(RSA.encrypt(me.myIv, me.yourPublickey));
         			
-                    System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n> ");
+                    //System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n> ");
         			
         			sockOut.write(rp.toString().getBytes());
         			sockOut.flush();
@@ -90,7 +90,7 @@ public class RecvThread implements Runnable {
             	
             	rp.bodyArray.add(me.myPublicKey);
 
-                System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n> ");
+                //System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n> ");
     			sockOut.write(rp.toString().getBytes());
     			sockOut.flush();
         	}
@@ -103,14 +103,14 @@ public class RecvThread implements Runnable {
     			rp.headerMap.put("From", me.myName);
     			rp.headerMap.put("To", me.yourName);
 
-                System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n> ");
+                //System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n> ");
     			sockOut.write(rp.toString().getBytes());
     			sockOut.flush();
         	}
         	else if(p.method.equals("MSGRECV")) {
         		String decrypted = AES.decrypt(p.bodyArray.get(0), me.yourSecretKey, me.yourIv);
         		String from = p.headerMap.get("From");
-        		System.out.println(String.format("%s: %s", from, decrypted));
+        		System.out.print(String.format("\r%s: %s\n> ", from, decrypted));
         	}
         }
         else {}
