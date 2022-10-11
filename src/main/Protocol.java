@@ -1,12 +1,14 @@
 package main;
 
 import java.util.HashMap;
+import java.util.Map;
 import java.util.ArrayList;
 import java.util.Scanner;
+import java.util.Map.Entry;
 
 public class Protocol {
     public String prefix = "3EPROTO", method = "";
-    public HashMap<String, String> headerMap = new HashMap<>();
+    public Map<String, String> headerMap = new HashMap<>();
     public ArrayList<String> bodyArray = new ArrayList<>();
 
     public String toString() {
@@ -14,8 +16,8 @@ public class Protocol {
 
         res += prefix + ' ' + method + '\n';
 
-        for (String c : headerMap.keySet()) {
-            res += (c + ':' + headerMap.get(c) + '\n');
+        for (Entry<String, String> c : headerMap.entrySet()) {
+            res += (c.getKey() + ':' + c.getValue() + '\n');
         }
 
         res += '\n';
