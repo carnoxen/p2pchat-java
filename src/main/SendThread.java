@@ -2,6 +2,7 @@ package main;
 
 import java.nio.charset.StandardCharsets;
 
+import main.State.*;
 import main.protocol.Algorithm;
 import main.protocol.Method;
 import main.protocol.Protocol;
@@ -63,10 +64,10 @@ public class SendThread implements Runnable {
                 Protocol sending = sendConnect();
 
                 switch (context.getState()) {
-                    case State.START _ -> {
-                        context.setState(new State.WAITING());
+                    case START _ -> {
+                        context.setState(new WAITING());
                     }
-                    case State.WAITING _ -> {
+                    case WAITING _ -> {
                         String command = IO.readln("Command: ").trim();
                         if (command.startsWith("disconnect")) {
                             sending = sendDisconnect();
@@ -79,11 +80,11 @@ public class SendThread implements Runnable {
                             sending = sendKeyexc(otherName);
                         }
                     }
-                    case State.TALKING t -> {
+                    case TALKING t -> {
                         String message = IO.readln("> ").trim();
                         sending = sendMessage(t.name(), message);
                         if ("!exit".equals(message)) {
-                            context.setState(new State.WAITING());
+                            context.setState(new WAITING());
                         }
                     }
                     default -> {

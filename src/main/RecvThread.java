@@ -2,6 +2,7 @@ package main;
 
 import java.nio.charset.StandardCharsets;
 
+import main.State.*;
 import main.protocol.Algorithm;
 import main.protocol.Method;
 import main.protocol.Protocol;
@@ -83,7 +84,7 @@ public class RecvThread implements Runnable {
                                     otherName
                                 );
 
-                                context.setState(new State.TALKING(otherName));
+                                context.setState(new TALKING(otherName));
                             }
                         }
                     }
@@ -117,7 +118,7 @@ public class RecvThread implements Runnable {
                                 );
                             }
                             case AES256CBC -> {
-                                context.setState(new State.TALKING(otherName));
+                                context.setState(new TALKING(otherName));
                             }
                             default -> {}
                         }
@@ -161,7 +162,7 @@ public class RecvThread implements Runnable {
                 os.flush();
             } else if (
                 Method.MSGRECV == received.method() && 
-                context.getState() instanceof State.TALKING s && 
+                context.getState() instanceof TALKING s && 
                 otherName.equals(s.name())
             ) {
                 var message = received.body().get(0);
@@ -171,7 +172,7 @@ public class RecvThread implements Runnable {
                 IO.print("\r\033[K");
                 IO.println("%s: %s".formatted(otherName, decrypted));
                 if ("!exit".equals(message)) {
-                    context.setState(new State.WAITING());
+                    context.setState(new WAITING());
                 }
             }
         }
