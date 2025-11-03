@@ -2,6 +2,7 @@ package main;
 
 import java.nio.charset.StandardCharsets;
 
+import main.protocol.Algorithm;
 import main.protocol.Method;
 import main.protocol.Protocol;
 
@@ -14,6 +15,7 @@ public class SendThread implements Runnable {
 
     private Protocol sendConnect() {
         var me = context.getMe();
+        
         return Protocol.connProtocol(
             Method.CONNECT,
             me.name()
@@ -22,6 +24,7 @@ public class SendThread implements Runnable {
 
     private Protocol sendDisconnect() {
         var me = context.getMe();
+
         return Protocol.connProtocol(
             Method.DISCONNECT,
             me.name()
@@ -30,24 +33,22 @@ public class SendThread implements Runnable {
 
     private Protocol sendKeyexc(String otherName) {
         var me = context.getMe();
-        var pubkey = me.publicKey();
 
         return Protocol.algoProtocol(
             Method.KEYXCHG, 
-            "RSA", 
+            Algorithm.RSA, 
             me.name(), 
             otherName, 
-            RSA.toEncodedString(pubkey)
+            RSA.toEncodedString(me.publicKey())
         );
     }
 
     private Protocol sendMessage(String otherName, String message) throws Exception {
         var me = context.getMe();
-        var you = context.getYouMap().get(otherName);
 
         return Protocol.msgProtocol(
             me.name(), 
-            you.name(), 
+            otherName, 
             AES.encrypt(message, me)
         );
     }
@@ -66,16 +67,24 @@ public class SendThread implements Runnable {
                         context.setState(new State.WAITING());
                     }
                     case State.WAITING _ -> {
-                        String otherName = IO.readln("input friend's name:");
-                        sending = sendKeyexc(otherName);
+                        String command = IO.readln("Command: ").trim();
+                        if (command.startsWith("disconnect")) {
+                            sending = sendDisconnect();
+                        }
+                        else if (
+                            command.startsWith("keyexc") &&
+                            command.split(" ").length > 1
+                        ) {
+                            String otherName = command.split(" ")[1];
+                            sending = sendKeyexc(otherName);
+                        }
                     }
                     case State.TALKING t -> {
-                        String message = IO.readln("> ");
+                        String message = IO.readln("> ").trim();
+                        sending = sendMessage(t.name(), message);
                         if ("!exit".equals(message)) {
-                            sending = sendDisconnect();
                             context.setState(new State.WAITING());
                         }
-                        sending = sendMessage(t.name(), message);
                     }
                     default -> {
                         IO.println("Some Error Encountered");

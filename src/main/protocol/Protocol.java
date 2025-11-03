@@ -37,9 +37,9 @@ public record Protocol(
         );
     }
 
-    public static Protocol algoProtocol(Method method, String algorithm, String from, String to, String... strings) {
+    public static Protocol algoProtocol(Method method, Algorithm algorithm, String from, String to, String... strings) {
         var aHeader = new Header() {{
-            put("Algo", algorithm);
+            put("Algo", algorithm.toString());
             put("From", from);
             put("To", to);
         }};

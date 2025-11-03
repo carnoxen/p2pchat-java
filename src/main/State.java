@@ -1,17 +1,15 @@
 package main;
 
 public sealed interface State {
-    record START() implements State {
+    record START() implements State {}
+    record WAITING() implements State {}
+    record TALKING(String name) implements State {
         public String name() {
-            return this.getClass().getSimpleName();
+            return this.name;
         }
     }
-    record WAITING() implements State {
-        public String name() {
-            return this.getClass().getSimpleName();
-        }
-    };
-    record TALKING(String name) implements State {}
 
-    public String name();
+    public default String name() {
+        return this.getClass().getSimpleName();
+    }
 }
