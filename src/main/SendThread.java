@@ -1,10 +1,9 @@
 package main;
 
 import java.nio.charset.StandardCharsets;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.Scanner;
+
+import main.protocol.Method;
+import main.protocol.Protocol;
 
 public class SendThread implements Runnable {
     private SocketContext context;
@@ -13,115 +12,81 @@ public class SendThread implements Runnable {
         this.context = context;
     }
 
-    private Protocol sendConnect(User me) {
-        Protocol p = new Protocol();
-
-        p.method = "CONNECT";
-        p.headerMap.put("Credential", me.myName);
-
-        return p;
+    private Protocol sendConnect() {
+        var me = context.getMe();
+        return Protocol.connProtocol(
+            Method.CONNECT,
+            me.name()
+        );
     }
 
-    private Protocol sendDisconnect(User me) {
-        Protocol p = new Protocol();
-
-        p.method = "DISCONNECT";
-        p.headerMap.put("Credential", me.myName);
-
-        return p;
+    private Protocol sendDisconnect() {
+        var me = context.getMe();
+        return Protocol.connProtocol(
+            Method.DISCONNECT,
+            me.name()
+        );
     }
 
-    private Protocol sendKeyexc(User me) {
-        Protocol p = new Protocol();
+    private Protocol sendKeyexc(String otherName) {
+        var me = context.getMe();
+        var pubkey = me.publicKey();
 
-        p.method = "KEYXCHG";
-
-        p.headerMap.put("Algo", "RSA");
-        p.headerMap.put("From", me.myName);
-        p.headerMap.put("To", me.yourName);
-
-        p.bodyArray.add(me.myPublicKey);
-
-        return p;
+        return Protocol.algoProtocol(
+            Method.KEYXCHG, 
+            "RSA", 
+            me.name(), 
+            otherName, 
+            RSA.toEncodedString(pubkey)
+        );
     }
 
-    private Protocol sendMessage(User me, String message) throws Exception {
-        Protocol p = new Protocol();
+    private Protocol sendMessage(String otherName, String message) throws Exception {
+        var me = context.getMe();
+        var you = context.getYouMap().get(otherName);
 
-        p.method = "MSGSEND";
-
-        p.headerMap.put("From", me.myName);
-        p.headerMap.put("To", me.yourName);
-        byte[] b = new byte[4];
-        new SecureRandom().nextBytes(b);
-        String nonceString = Base64.getEncoder().encodeToString(b).substring(0, 5);
-        p.headerMap.put("Nonce", nonceString);
-
-        p.bodyArray.add(AES.encrypt(message, me.mySecretKey, me.myIv));
-
-        return p;
-    }
-
-    private User createUser(String name) throws NoSuchAlgorithmException {
-        User u = new User();
-        u.myName = name;
-
-        String[] keyPair = RSA.getKeyPair();
-        u.myPublicKey = keyPair[0];
-        u.myPrivateKey = keyPair[1];
-
-        String[] keySet = AES.getKeySet();
-        u.mySecretKey = keySet[0];
-        u.myIv = keySet[1];
-
-        return u;
+        return Protocol.msgProtocol(
+            me.name(), 
+            you.name(), 
+            AES.encrypt(message, me)
+        );
     }
 
     @Override
     public void run() {
-        // TODO Auto-generated method stub
-        var scanner = new Scanner(System.in);
+        var client = context.getClientSocket();
 
-        while (!context.getClientSocket().isClosed()) {
+        while (!client.isClosed()) {
             try {
-                var os = context.getClientSocket().getOutputStream();
+                var os = client.getOutputStream();
+                Protocol sending = sendConnect();
 
-                // var cs = context.getState();
-                User me = context.getMe();
-                Protocol p = new Protocol();
-
-                System.out.print("> ");
-                String command = scanner.nextLine().trim();
-
-                if (command.equals("connect")) {
-                    String name = scanner.nextLine().trim();
-
-                    me = createUser(name);
-
-                    p = sendConnect(me);
-                } else if (command.equals("disconnect")) {
-                    p = sendDisconnect(me);
-                } else if (command.equals("keyexc")) {
-                    String name = scanner.nextLine().trim();
-
-                    me.yourName = name;
-
-                    p = sendKeyexc(me);
-                } else {
-                    p = sendMessage(me, command);
+                switch (context.getState()) {
+                    case State.START _ -> {
+                        context.setState(new State.WAITING());
+                    }
+                    case State.WAITING _ -> {
+                        String otherName = IO.readln("input friend's name:");
+                        sending = sendKeyexc(otherName);
+                    }
+                    case State.TALKING t -> {
+                        String message = IO.readln("> ");
+                        if ("!exit".equals(message)) {
+                            sending = sendDisconnect();
+                            context.setState(new State.WAITING());
+                        }
+                        sending = sendMessage(t.name(), message);
+                    }
+                    default -> {
+                        IO.println("Some Error Encountered");
+                    }
                 }
 
-                context.setMe(me);
-                // System.out.print("\r==== send ====\n" + p.toString() + "\n==== send ====\n>
-                // ");
-
-                byte[] payload = p.toString().getBytes(StandardCharsets.UTF_8);
-
+                byte[] payload = sending.toString().getBytes(StandardCharsets.UTF_8);
                 os.write(payload, 0, payload.length);
                 os.flush();
             } catch (Exception e) {
-                System.out.println(e);
-                scanner.close();
+                IO.println(e);
                 break;
             }
         }

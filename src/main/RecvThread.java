@@ -2,6 +2,9 @@ package main;
 
 import java.nio.charset.StandardCharsets;
 
+import main.protocol.Method;
+import main.protocol.Protocol;
+
 public class RecvThread implements Runnable {
     private SocketContext context;
 
@@ -10,121 +13,156 @@ public class RecvThread implements Runnable {
     }
 
     public void parseReceiveData(String recvData) throws Exception {
-        // 여기부터 3EPROTO 패킷 처리를 개시합니다.
-        // System.out.print("\n==== recv ====\n" + recvData + "\n==== recv ====\n> ");
-        Protocol p = Protocol.strToPro(recvData);
-        Protocol rp = new Protocol();
-        User me = context.getMe();
+        var me = context.getMe();
+        var youMap = context.getYouMap();
+        var client = context.getClientSocket();
+        var received = Protocol.strToPro(recvData);
+        var mySecretKey = me.secretKey();
+        var myIvParameterSpec = me.ivParameterSpec();
 
-        if (p.prefix.equals("3EPROTO")) {
-            var sockOut = context.getClientSocket().getOutputStream();
+        if (Protocol.DEFAULT_PREFIX.equals(received.prefix())) {
+            var os = client.getOutputStream();
+            var methodString = received.method().toString();
 
-            if (p.method.equals("KEYXCHG")) {
-                if (!me.yourPublickey.equals("") && context.getState() == State.from) {
-                    rp.method = "KEYXCHGFAIL";
+            if (methodString.startsWith("KEYXCHG")) {
+                var otherName = received.header().get("From");
+                var response = new Protocol();
+                var algo = received.header().get("Algo");
+                var myPubKey = me.publicKey();
+                var myPrivateKey = context.getPrivateKey();
 
-                    rp.headerMap.put("Algo", "RSA");
-                    rp.headerMap.put("From", me.myName);
-                    rp.headerMap.put("To", me.yourName);
+                switch (received.method()) {
+                    case KEYXCHG -> {
+                        if (algo.equals("RSA")) {
+                            var receivedPubString = received.body().get(0);
+                            var receivedPubKey = RSA.parsePublicKey(receivedPubString);
 
-                    rp.bodyArray.add("Duplicated Key Exchange Request");
-                } else if (p.headerMap.get("Algo").equals("RSA")) {
-                    me.yourName = p.headerMap.get("From");
-                    me.yourPublickey = p.bodyArray.get(0);
+                            youMap.put(otherName, new User(
+                                otherName,
+                                receivedPubKey,
+                                null,
+                                null
+                            ));
 
-                    rp.method = "KEYXCHGOK";
+                            response = Protocol.algoProtocol(
+                                Method.KEYXCHGOK,
+                                "RSA",
+                                me.name(),
+                                otherName,
+                                RSA.toEncodedString(myPubKey),
+                                RSA.encrypt(mySecretKey.getEncoded(), receivedPubKey),
+                                RSA.encrypt(myIvParameterSpec.getIV(), receivedPubKey)
+                            );
+                        } else if (algo.equals("AES-256-CBC")) {
+                            var receivedSecString = received.body().get(0);
+                            var receivedIvString = received.body().get(1);
+                            var decryptedSecBytes = RSA.decrypt(receivedSecString, myPrivateKey);
+                            var decryptedIvBytes = RSA.decrypt(receivedIvString, myPrivateKey);
 
-                    rp.headerMap.put("Algo", "RSA");
-                    rp.headerMap.put("From", me.myName);
-                    rp.headerMap.put("To", me.yourName);
+                            var receivedPubKey = youMap.get(otherName).publicKey();
+                            var receivedSecKey = AES.parseSecretKey(decryptedSecBytes);
+                            var receivedIv = AES.parseIv(decryptedIvBytes);
 
-                    rp.bodyArray.add(me.myPublicKey);
-                    rp.bodyArray.add(RSA.encrypt(me.mySecretKey, me.yourPublickey));
-                    rp.bodyArray.add(RSA.encrypt(me.myIv, me.yourPublickey));
+                            youMap.put(otherName, new User(
+                                otherName,
+                                receivedPubKey,
+                                receivedSecKey,
+                                receivedIv
+                            ));
 
-                    context.setState(State.to);
-                } else if (p.headerMap.get("Algo").equals("AES-256-CBC")) {
-                    me.yourSecretKey = RSA.decrypt(p.bodyArray.get(0), me.myPrivateKey);
-                    me.yourIv = RSA.decrypt(p.bodyArray.get(1), me.myPrivateKey);
+                            response = Protocol.algoProtocol(
+                                Method.KEYXCHGOK,
+                                "AES-256-CBC",
+                                me.name(),
+                                otherName
+                            );
 
-                    rp.method = "KEYXCHGOK";
+                            context.setState(new State.TALKING(otherName));
+                        }
+                    }
+                    case KEYXCHGOK -> {
+                        if (algo.equals("RSA")) {
+                            var receivedPubString = received.body().get(0);
+                            var receivedSecString = received.body().get(1);
+                            var receivedIvString = received.body().get(2);
+                            var decryptedSecBytes = RSA.decrypt(receivedSecString, myPrivateKey);
+                            var decryptedIvBytes = RSA.decrypt(receivedIvString, myPrivateKey);
 
-                    rp.headerMap.put("Algo", "AES-256-CBC");
-                    rp.headerMap.put("From", me.myName);
-                    rp.headerMap.put("To", me.yourName);
+                            var receivedPubKey = RSA.parsePublicKey(receivedPubString);
+                            var receivedSecKey = AES.parseSecretKey(decryptedSecBytes);
+                            var receivedIv = AES.parseIv(decryptedIvBytes);
+
+                            youMap.put(otherName, new User(
+                                otherName,
+                                receivedPubKey,
+                                receivedSecKey,
+                                receivedIv
+                            ));
+
+                            response = Protocol.algoProtocol(
+                                Method.KEYXCHG, 
+                                "AES-256-CBC", 
+                                me.name(), 
+                                otherName, 
+                                RSA.encrypt(mySecretKey.getEncoded(), receivedPubKey),
+                                RSA.encrypt(myIvParameterSpec.getIV(), receivedPubKey)
+                            );
+                        }
+                    }
+                    case KEYXCHGFAIL -> {
+                        response = Protocol.algoProtocol(
+                            Method.KEYXCHGRST, 
+                            "RSA", 
+                            me.name(), 
+                            otherName, 
+                            RSA.toEncodedString(myPubKey)
+                        );
+                    }
+                    case KEYXCHGRST -> {
+                        var receivedPubString = received.body().get(0);
+                        var receivedPubKey = RSA.parsePublicKey(receivedPubString);
+
+                        youMap.put(otherName, new User(
+                            otherName,
+                            receivedPubKey,
+                            null,
+                            null
+                        ));
+
+                        response = Protocol.algoProtocol(
+                            Method.KEYXCHGOK, 
+                            "RSA", 
+                            me.name(), 
+                            otherName, 
+                            RSA.toEncodedString(myPubKey),
+                            RSA.encrypt(mySecretKey.getEncoded(), receivedPubKey),
+                            RSA.encrypt(myIvParameterSpec.getIV(), receivedPubKey)
+                        );
+                    }
+                    default -> {}
                 }
-                // System.out.print("\n==== send ====\n" + rp.toString() + "\n==== send ====\n>
-                // ");
 
-                sockOut.write(rp.toString().getBytes());
-                sockOut.flush();
-            } else if (p.method.equals("KEYXCHGOK")) {
-                if (p.headerMap.get("Algo").equals("RSA")) {
-                    me.yourPublickey = p.bodyArray.get(0);
-                    me.yourSecretKey = RSA.decrypt(p.bodyArray.get(1), me.myPrivateKey);
-                    me.yourIv = RSA.decrypt(p.bodyArray.get(2), me.myPrivateKey);
+                os.write(response.toString().getBytes());
+                os.flush();
+            } else if (Method.MSGRECV == received.method()) {
+                var message = received.body().get(0);
+                var otherName = received.header().get("From");
+                var you = context.getYouMap().get(otherName);
+                var decrypted = AES.decrypt(message, you);
 
-                    rp.method = "KEYXCHG";
-
-                    rp.headerMap.put("Algo", "AES-256-CBC");
-                    rp.headerMap.put("From", me.myName);
-                    rp.headerMap.put("To", me.yourName);
-
-                    rp.bodyArray.add(RSA.encrypt(me.mySecretKey, me.yourPublickey));
-                    rp.bodyArray.add(RSA.encrypt(me.myIv, me.yourPublickey));
-
-                    // System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n>
-                    // ");
-
-                    sockOut.write(rp.toString().getBytes());
-                    sockOut.flush();
-                }
-            } else if (p.method.equals("KEYXCHGFAIL")) {
-                rp.method = "KEYXCHGRST";
-
-                rp.headerMap.put("Algo", "RSA");
-                rp.headerMap.put("From", me.myName);
-                rp.headerMap.put("To", me.yourName);
-
-                rp.bodyArray.add(me.myPublicKey);
-
-                // System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n>
-                // ");
-                sockOut.write(rp.toString().getBytes());
-                sockOut.flush();
-            } else if (p.method.equals("KEYXCHGRST")) {
-                me.yourPublickey = p.bodyArray.get(0);
-
-                rp.method = "KEYXCHGOK";
-
-                rp.headerMap.put("Algo", "RSA");
-                rp.headerMap.put("From", me.myName);
-                rp.headerMap.put("To", me.yourName);
-
-                // System.out.print("\n==== send ====\n" + p.toString() + "\n==== send ====\n>
-                // ");
-                sockOut.write(rp.toString().getBytes());
-                sockOut.flush();
-            } else if (p.method.equals("MSGRECV")) {
-                String decrypted = AES.decrypt(p.bodyArray.get(0), me.yourSecretKey, me.yourIv);
-                String from = p.headerMap.get("From");
-                System.out.print(String.format("\r%s: %s\n> ", from, decrypted));
+                IO.print("\r\033[K");
+                IO.println("%s: %s".formatted(otherName, decrypted));
             }
-        } else {
         }
-
-        context.setMe(me);
     }
 
     @Override
     public void run() {
-        // TODO Auto-generated method stub
-        while (!context.getClientSocket().isClosed()) {
+        var client = context.getClientSocket();
+        while (!client.isClosed()) {
             try {
-                var is = context.getClientSocket().getInputStream();
-
+                var is = client.getInputStream();
                 byte[] recvBytes = new byte[2048];
-
                 int recvSize = is.read(recvBytes);
 
                 if (recvSize == 0) {
@@ -132,10 +170,9 @@ public class RecvThread implements Runnable {
                 }
 
                 String recv = new String(recvBytes, 0, recvSize, StandardCharsets.UTF_8);
-
                 parseReceiveData(recv);
             } catch (Exception e) {
-                System.out.println("\r" + e);
+                IO.println("\r\033[K" + e);
                 break;
             }
         }

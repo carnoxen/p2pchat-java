@@ -2,50 +2,56 @@ package main;
 
 import java.security.*;
 import java.util.Base64;
+import java.util.Base64.*;
 
 import javax.crypto.*;
 import javax.crypto.spec.*;
 
 public class AES {
-    private static final int keysize = 256;
-    private static final int vectorsize = keysize / 2;
+    private static final int KEYSIZE = 256;
+    private static final int VECTORSIZE = KEYSIZE / 2;
+    private static final String ALGORITHM = "AES";
+    private static final String TRANSFORMATION = "AES/CBC/PKCS5Padding";
+    private static final Encoder ENCODER = Base64.getEncoder();
+    private static final Decoder DECODER = Base64.getDecoder();
 
-    public static String[] getKeySet() throws NoSuchAlgorithmException {
-        KeyGenerator keyGen = KeyGenerator.getInstance("AES");
-        keyGen.init(keysize); // for example
-        SecretKey secretKey = keyGen.generateKey();
+    public static SecretKey generateKey() throws Exception {
+        var keyGen = KeyGenerator.getInstance(ALGORITHM);
+        keyGen.init(KEYSIZE);
+        return keyGen.generateKey();
+    }
 
-        String keyString = Base64.getEncoder().encodeToString(secretKey.getEncoded());
-        byte[] iv = new byte[vectorsize / Byte.SIZE];
+    public static IvParameterSpec generateIvParameterSpec() throws Exception {
+        byte[] iv = new byte[VECTORSIZE / Byte.SIZE];
         new SecureRandom().nextBytes(iv);
-        String ivString = Base64.getEncoder().encodeToString(iv);
-
-        String[] keyset = { keyString, ivString };
-        return keyset;
+        return new IvParameterSpec(iv);
     }
 
-    public static String encrypt(String plain, String key, String ivString) throws Exception {
-        byte[] byteSecretKey = Base64.getDecoder().decode(key.getBytes());
-        SecretKeySpec secretKeySpec = new SecretKeySpec(byteSecretKey, "AES");
-
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        byte[] iv = Base64.getDecoder().decode(ivString);
-        cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, new IvParameterSpec(iv));
-
-        byte[] byteEncryptedData = cipher.doFinal(plain.getBytes());
-        return Base64.getEncoder().encodeToString(byteEncryptedData);
+    public static SecretKey parseSecretKey(byte[] data) throws Exception {
+        return new SecretKeySpec(data, ALGORITHM);
     }
 
-    public static String decrypt(String encrypted, String key, String ivString) throws Exception {
-        byte[] byteSecretKey = Base64.getDecoder().decode(key.getBytes());
-        SecretKeySpec secretKeySpec = new SecretKeySpec(byteSecretKey, "AES");
+    public static IvParameterSpec parseIv(byte[] data) throws Exception {
+        return new IvParameterSpec(data);
+    }
 
-        Cipher cipher = Cipher.getInstance("AES/CBC/PKCS5Padding");
-        byte[] iv = Base64.getDecoder().decode(ivString);
-        cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, new IvParameterSpec(iv));
+    public static String encrypt(String plain, User user) throws Exception {
+        var secretKey = user.secretKey();
+        var ivParameterSpec = user.ivParameterSpec();
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey, ivParameterSpec);
 
-        byte[] byteEncryptedData = Base64.getDecoder().decode(encrypted.getBytes());
-        byte[] byteDecryptedData = cipher.doFinal(byteEncryptedData);
-        return new String(byteDecryptedData);
+        byte[] encryptedData = cipher.doFinal(plain.getBytes());
+        return ENCODER.encodeToString(encryptedData);
+    }
+
+    public static String decrypt(String encrypted, User user) throws Exception {
+        var secretKey = user.secretKey();
+        var ivParameterSpec = user.ivParameterSpec();
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, ivParameterSpec);
+
+        byte[] encryptedData = DECODER.decode(encrypted);
+        return new String(cipher.doFinal(encryptedData));
     }
 }

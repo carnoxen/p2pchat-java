@@ -1,18 +1,13 @@
 package main;
 
-public class User {
-    public String myName = "";
+import java.security.PublicKey;
 
-    public String myPublicKey = "";
-    public String myPrivateKey = "";
+import javax.crypto.SecretKey;
+import javax.crypto.spec.IvParameterSpec;
 
-    public String mySecretKey = "";
-    public String myIv = "";
-
-    public String yourName = "";
-
-    public String yourPublickey = "";
-
-    public String yourSecretKey = "";
-    public String yourIv = "";
-}
+public record User(
+    String name,
+    PublicKey publicKey,
+    SecretKey secretKey,
+    IvParameterSpec ivParameterSpec
+) {}
