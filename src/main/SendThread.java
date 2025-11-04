@@ -81,7 +81,8 @@ public class SendThread implements Runnable {
                         }
                     }
                     case TALKING t -> {
-                        String message = IO.readln("> ").trim();
+                        var reader = context.getLineReader();
+                        String message = reader.readLine("> ");
                         sending = sendMessage(t.name(), message);
                         if ("!exit".equals(message)) {
                             context.setState(new WAITING());

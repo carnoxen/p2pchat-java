@@ -14,6 +14,10 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
+import org.jline.reader.LineReader;
+import org.jline.reader.LineReaderBuilder;
+import org.jline.terminal.TerminalBuilder;
+
 public class SocketContext {
     private static final String AES_ALGORITHM = "AES";
     private static final String RSA_ALGORITHM = "RSA";
@@ -22,6 +26,7 @@ public class SocketContext {
     private final Socket clientSocket;
     private final PrivateKey privateKey;
     private final User me;
+    private final LineReader lineReader;
     private State state = new State.START();
     private Map<String, User> youMap = new HashMap<>();
 
@@ -29,6 +34,8 @@ public class SocketContext {
         String name = IO.readln("input your name:");
         var keypair = RSA.generateKeyPair();
 
+        var terminal = TerminalBuilder.builder().build();
+        this.lineReader = LineReaderBuilder.builder().terminal(terminal).build();
         this.clientSocket = new Socket(host, port);
         this.privateKey = keypair.getPrivate();
         this.me = new User(
@@ -57,6 +64,10 @@ public class SocketContext {
 
     public synchronized State getState() {
         return state;
+    }
+
+    public synchronized LineReader getLineReader() {
+        return lineReader;
     }
 
     public synchronized void addYou(User user) {

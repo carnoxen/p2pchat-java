@@ -175,8 +175,8 @@ public class RecvThread implements Runnable {
                 var you = context.getYou(otherName);
                 var decrypted = you.decryptMessage(message);
 
-                IO.print("\r\033[K");
-                IO.println("%s: %s".formatted(otherName, decrypted));
+                var reader = context.getLineReader();
+                reader.printAbove("%s: %s\n".formatted(otherName, decrypted));
                 if ("!exit".equals(message)) {
                     context.setState(new WAITING());
                 }
