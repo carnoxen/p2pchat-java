@@ -1,6 +1,7 @@
 package main;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 
 import main.State.*;
 import main.protocol.Algorithm;
@@ -18,20 +19,17 @@ public class RecvThread implements Runnable {
         var received = Protocol.strToPro(recvData);
 
         var me = context.getMe();
-        var youMap = context.getYouMap();
         var client = context.getClientSocket();
         var mySecretKey = me.secretKey();
-        var myIv = me.ivParameterSpec();
-        var otherName = received.header().get("From");
+        var myIv = me.iv();
 
         if (Protocol.DEFAULT_PREFIX.equals(received.prefix())) {
             var os = client.getOutputStream();
             var methodString = received.method().toString();
+            var otherName = received.header().get("From");
 
             if (methodString.startsWith("KEYXCHG")) {
                 var response = new Protocol();
-                var myPubKey = me.publicKey();
-                var myPrivateKey = context.getPrivateKey();
 
                 var algoString = received.header().get("Algo");
                 var otherAlgo = Algorithm.valueOf(algoString);
@@ -41,36 +39,46 @@ public class RecvThread implements Runnable {
                         switch (otherAlgo) {
                             case RSA -> {
                                 var receivedPubString = received.body().get(0);
-                                var receivedPubKey = RSA.parsePublicKey(receivedPubString);
 
-                                youMap.put(otherName, new User(
+                                var receivedPubKey = context.parsePublicKey(receivedPubString);
+
+                                var you = context.getYou(otherName);
+                                if (Objects.nonNull(you) && !receivedPubKey.equals(you.publicKey())) {
+                                    response = Protocol.algoProtocol(
+                                        Method.KEYXCHGFAIL,
+                                        Algorithm.RSA,
+                                        me.name(),
+                                        otherName,
+                                        "Public key is different."
+                                    );
+                                }
+
+                                context.addYou(new User(
                                     otherName,
                                     receivedPubKey,
                                     null,
                                     null
                                 ));
-
                                 response = Protocol.algoProtocol(
                                     Method.KEYXCHGOK,
                                     Algorithm.RSA,
                                     me.name(),
                                     otherName,
-                                    RSA.toEncodedString(myPubKey),
-                                    RSA.encrypt(mySecretKey.getEncoded(), receivedPubKey),
-                                    RSA.encrypt(myIv.getIV(), receivedPubKey)
+                                    me.pubkeyToString(),
+                                    you.encryptSecrets(mySecretKey.getEncoded()),
+                                    you.encryptSecrets(myIv.getIV())
                                 );
                             } 
                             case AES256CBC -> {
                                 var receivedSecString = received.body().get(0);
                                 var receivedIvString = received.body().get(1);
-                                var decryptedSecBytes = RSA.decrypt(receivedSecString, myPrivateKey);
-                                var decryptedIvBytes = RSA.decrypt(receivedIvString, myPrivateKey);
 
-                                var receivedPubKey = youMap.get(otherName).publicKey();
-                                var receivedSecKey = AES.parseSecretKey(decryptedSecBytes);
-                                var receivedIv = AES.parseIv(decryptedIvBytes);
+                                var you = context.getYou(otherName);
+                                var receivedPubKey = you.publicKey();
+                                var receivedSecKey = context.decryptSecretKey(receivedSecString);
+                                var receivedIv = context.decryptIv(receivedIvString);
 
-                                youMap.put(otherName, new User(
+                                context.addYou(new User(
                                     otherName,
                                     receivedPubKey,
                                     receivedSecKey,
@@ -94,35 +102,32 @@ public class RecvThread implements Runnable {
                                 var receivedPubString = received.body().get(0);
                                 var receivedSecString = received.body().get(1);
                                 var receivedIvString = received.body().get(2);
-                                var decryptedSecBytes = RSA.decrypt(receivedSecString, myPrivateKey);
-                                var decryptedIvBytes = RSA.decrypt(receivedIvString, myPrivateKey);
 
-                                var receivedPubKey = RSA.parsePublicKey(receivedPubString);
-                                var receivedSecKey = AES.parseSecretKey(decryptedSecBytes);
-                                var receivedIv = AES.parseIv(decryptedIvBytes);
+                                var receivedPubKey = context.parsePublicKey(receivedPubString);
+                                var receivedSecKey = context.decryptSecretKey(receivedSecString);
+                                var receivedIv = context.decryptIv(receivedIvString);
 
-                                youMap.put(otherName, new User(
+                                context.addYou(new User(
                                     otherName,
                                     receivedPubKey,
                                     receivedSecKey,
                                     receivedIv
                                 ));
 
+                                var you = context.getYou(otherName);
                                 response = Protocol.algoProtocol(
                                     Method.KEYXCHG, 
                                     Algorithm.AES256CBC,
                                     me.name(), 
                                     otherName, 
-                                    RSA.encrypt(mySecretKey.getEncoded(), receivedPubKey),
-                                    RSA.encrypt(myIv.getIV(), receivedPubKey)
+                                    you.encryptSecrets(mySecretKey.getEncoded()),
+                                    you.encryptSecrets(myIv.getIV())
                                 );
                             }
                             case AES256CBC -> {
                                 context.setState(new TALKING(otherName));
                             }
                             default -> {}
-                        }
-                        if (otherAlgo == Algorithm.RSA) {
                         }
                     }
                     case KEYXCHGFAIL -> {
@@ -131,28 +136,29 @@ public class RecvThread implements Runnable {
                             Algorithm.RSA, 
                             me.name(), 
                             otherName, 
-                            RSA.toEncodedString(myPubKey)
+                            me.pubkeyToString()
                         );
                     }
                     case KEYXCHGRST -> {
                         var receivedPubString = received.body().get(0);
-                        var receivedPubKey = RSA.parsePublicKey(receivedPubString);
+                        var receivedPubKey = context.parsePublicKey(receivedPubString);
 
-                        youMap.put(otherName, new User(
+                        context.addYou(new User(
                             otherName,
                             receivedPubKey,
                             null,
                             null
                         ));
 
+                        var you = context.getYou(otherName);
                         response = Protocol.algoProtocol(
                             Method.KEYXCHGOK, 
                             Algorithm.RSA, 
                             me.name(), 
                             otherName, 
-                            RSA.toEncodedString(myPubKey),
-                            RSA.encrypt(mySecretKey.getEncoded(), receivedPubKey),
-                            RSA.encrypt(myIv.getIV(), receivedPubKey)
+                            me.pubkeyToString(),
+                            you.encryptSecrets(mySecretKey.getEncoded()),
+                            you.encryptSecrets(myIv.getIV())
                         );
                     }
                     default -> {}
@@ -166,8 +172,8 @@ public class RecvThread implements Runnable {
                 otherName.equals(s.name())
             ) {
                 var message = received.body().get(0);
-                var you = context.getYouMap().get(otherName);
-                var decrypted = AES.decrypt(message, you);
+                var you = context.getYou(otherName);
+                var decrypted = you.decryptMessage(message);
 
                 IO.print("\r\033[K");
                 IO.println("%s: %s".formatted(otherName, decrypted));

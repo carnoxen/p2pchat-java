@@ -40,7 +40,7 @@ public class SendThread implements Runnable {
             Algorithm.RSA, 
             me.name(), 
             otherName, 
-            RSA.toEncodedString(me.publicKey())
+            me.pubkeyToString()
         );
     }
 
@@ -50,7 +50,7 @@ public class SendThread implements Runnable {
         return Protocol.msgProtocol(
             me.name(), 
             otherName, 
-            AES.encrypt(message, me)
+            me.encryptMessage(message)
         );
     }
 
